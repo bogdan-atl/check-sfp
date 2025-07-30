@@ -36,13 +36,16 @@ pipeline {
         stage('Deploy') {
             steps {
                 script {
-                    echo "Копирование бинарника на целевую машину..."
+                    echo "Остановка сервиса перед обновлением..."
                     sh '''
-                        # Копируем с правами root
-                        sudo mkdir -p ${TARGET_DIR}
-                        sudo cp ${BINARY_NAME} ${TARGET_DIR}/${BINARY_NAME}
-                        sudo chown root:root ${TARGET_DIR}/${BINARY_NAME}
-                        sudo chmod +x ${TARGET_DIR}/${BINARY_NAME}
+                        # Останавливаем сервис (если запущен)
+                        sudo systemctl stop sfp-parser.service || true
+            
+                        # Теперь можно безопасно копировать
+                        sudo mkdir -p /root/sfp
+                        sudo cp sfp-parser /root/sfp/sfp-parser
+                        sudo chown root:root /root/sfp/sfp-parser
+                        sudo chmod +x /root/sfp/sfp-parser
                     '''
                 }
             }
