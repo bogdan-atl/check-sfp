@@ -14,7 +14,6 @@ pipeline {
         stage('Clean') {
             steps {
                 script {
-                    echo "Очистка предыдущей сборки..."
                     sh 'rm -f sfp-parser'
                 }
             }
@@ -23,7 +22,6 @@ pipeline {
         stage('Build') {
             steps {
                 script {
-                    echo "Сборка Go-проекта..."
                     sh '''
                         go mod tidy
                         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ${BINARY_NAME} .
@@ -36,7 +34,6 @@ pipeline {
         stage('Deploy') {
             steps {
                 script {
-                    echo "Остановка сервиса перед обновлением..."
                     sh '''
                         # Останавливаем сервис (если запущен)
                         sudo systemctl stop sfp-parser.service || true
@@ -54,7 +51,6 @@ pipeline {
         stage('Restart Service') {
             steps {
                 script {
-                    echo "Перезапуск systemd сервиса..."
                     sh '''
                         sudo systemctl stop ${SERVICE_NAME} || true
                         sudo systemctl daemon-reload
@@ -67,7 +63,6 @@ pipeline {
         stage('Verify Service') {
             steps {
                 script {
-                    echo "Проверка статуса сервиса..."
                     sh '''
                         sudo systemctl is-active --quiet ${SERVICE_NAME}
                         if [ $? -ne 0 ]; then
@@ -75,7 +70,7 @@ pipeline {
                             sudo systemctl status ${SERVICE_NAME} --no-pager
                             exit 1
                         fi
-                        echo "✅ Сервис ${SERVICE_NAME} работает."
+                        echo "✅ OK ${SERVICE_NAME} ."
                     '''
                 }
             }
@@ -84,11 +79,9 @@ pipeline {
 
     post {
         success {
-            echo "✅ Развертывание успешно завершено."
             sh 'echo "Service deployed successfully at $(date)" | logger -t jenkins'
         }
         failure {
-            echo "❌ Ошибка при развертывании!"
             sh 'echo "Deployment failed at $(date)" | logger -t jenkins'
         }
     }
