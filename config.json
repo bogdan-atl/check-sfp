@@ -1,0 +1,35 @@
+{
+  "switches": [
+    {
+      "host": "",
+      "port": 22,
+      "username": "admin",
+      "password": "",
+      "comment": ""
+    },
+    {
+      "host": "",
+      "port": 22,
+      "username": "admin",
+      "password": "",
+      "comment": ""
+    },
+    {
+      "host": "",
+      "port": 22,
+      "username": "admin",
+      "password": "",
+      "comment": "адм"
+    },
+    {
+      "host": "",
+      "port": 22,
+      "username": "admin",
+      "password": "",
+      "comment": ""
+    }
+  ],
+  "telegram_token": "",
+  "telegram_chat_id": ,
+  "threshold": -20.0
+}
