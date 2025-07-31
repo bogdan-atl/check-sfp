@@ -50,6 +50,7 @@ type Config struct {
 	TelegramChatID int64    `json:"telegram_chat_id"`
 	Switches       []Switch `json:"switches"`
 	Threshold      float64  `json:"threshold"`
+	AutoCheck      bool     `json:"auto_check"`
 }
 
 var rxPowerRegex = regexp.MustCompile(`(?i)rx.*power.*?(-?\d+(?:\.\d+)?)`)
@@ -237,30 +238,38 @@ func sfpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Фоновая проверка (как раньше)
-func startPeriodicChecks() {
-	config, err := loadConfig("config.json")
-	if err != nil {
-		log.Fatalf("❌ Не могу загрузить конфиг: %v", err)
-	}
-
+func startPeriodicChecks(config *Config) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for {
 		<-ticker.C
+		log.Println("🔄 Выполняется автоматическая проверка SFP...")
+
 		var results []SFPResult
+		var mu sync.Mutex
 		var wg sync.WaitGroup
 
 		for _, sw := range config.Switches {
 			wg.Add(1)
 			go func(s Switch) {
 				defer wg.Done()
-				connectAndParseTransceiverData(s, config.Threshold, &results)
+
+				var localResults []SFPResult
+				connectAndParseTransceiverData(s, config.Threshold, &localResults)
+
+				mu.Lock()
+				for i := range localResults {
+					localResults[i].Comment = s.Comment
+				}
+				results = append(results, localResults...)
+				mu.Unlock()
 			}(sw)
 		}
+
 		wg.Wait()
 
-		// Обновляем кэш
+		// Сохраняем результаты в кэш
 		lastResultsMu.Lock()
 		lastResults = results
 		lastResultsMu.Unlock()
@@ -273,10 +282,10 @@ func main() {
 		log.Fatalf("❌ Не могу загрузить конфиг: %v", err)
 	}
 
-	// Инициализация Telegram из config.json
-	initTelegramBot(config.TelegramToken, config.TelegramChatID) // Замени
+	// Инициализация Telegram
+	initTelegramBot(config.TelegramToken, config.TelegramChatID)
 
-	// Запускаем HTTP сервер
+	// Запускаем HTTP сервер — всегда нужен
 	http.HandleFunc("/sfp", sfpHandler)
 	go func() {
 		log.Println("🌐 HTTP сервер запущен на :8080")
@@ -285,21 +294,28 @@ func main() {
 		}
 	}()
 
-	// Запускаем периодические проверки
-	go startPeriodicChecks()
+	// 🔁 Условный запуск автопроверки
+	if config.AutoCheck {
+		log.Println("🔁 Автоматическая проверка включена (каждые 5 минут)")
+		go startPeriodicChecks(config)
+	} else {
+		log.Println("⏸️ Автоматическая проверка отключена. Работает только API.")
+	}
 
-	// Первая проверка при старте
-	go func() {
-		time.Sleep(2 * time.Second) // Даем серверу стартовать
-		resp, err := http.Get("http://localhost:8080/sfp")
-		if err != nil {
-			log.Printf("❌ Не удалось выполнить первую проверку: %v", err)
-		} else {
-			defer resp.Body.Close()
-			log.Printf("✅ Первая проверка выполнена, статус: %s", resp.Status)
-		}
-	}()
+	// Опционально: первая проверка при старте (только если auto_check включён)
+	if config.AutoCheck {
+		go func() {
+			time.Sleep(2 * time.Second)
+			resp, err := http.Get("http://localhost:8080/sfp")
+			if err != nil {
+				log.Printf("⚠️ Не удалось выполнить первую проверку: %v", err)
+			} else {
+				defer resp.Body.Close()
+				log.Printf("✅ Первая проверка выполнена, статус: %s", resp.Status)
+			}
+		}()
+	}
 
-	// Бесконечный цикл
+	// Бесконечный цикл — держим процесс живым
 	select {}
 }

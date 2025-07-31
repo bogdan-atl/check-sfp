@@ -31,5 +31,6 @@
   ],
   "telegram_token": "",
   "telegram_chat_id": ,
-  "threshold": -20.0
+  "threshold": -20.0,
+  "auto_check": true
 }
