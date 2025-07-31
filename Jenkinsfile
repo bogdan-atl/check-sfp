@@ -26,7 +26,7 @@ pipeline {
                         go mod tidy
                         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ${BINARY_NAME} .
                     '''
-                    sh 'ls -la sfp-parser'  // проверка, что бинарник создан
+                    sh 'ls -la sfp-parser'
                 }
             }
         }
@@ -38,7 +38,7 @@ pipeline {
                         # Останавливаем сервис (если запущен)
                         sudo systemctl stop sfp-parser.service || true
             
-                        # Теперь можно безопасно копировать
+           
                         sudo mkdir -p /root/sfp
                         sudo cp sfp-parser /root/sfp/sfp-parser
                         sudo chown root:root /root/sfp/sfp-parser
