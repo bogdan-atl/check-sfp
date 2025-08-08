@@ -29,6 +29,7 @@
       "comment": ""
     }
   ],
+  "send_messages": false,
   "telegram_token": "",
   "telegram_chat_id": ,
   "threshold": -20.0,

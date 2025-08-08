@@ -51,6 +51,7 @@ type Config struct {
 	Switches       []Switch `json:"switches"`
 	Threshold      float64  `json:"threshold"`
 	AutoCheck      bool     `json:"auto_check"`
+	SendMessages   bool     `json:"send_messages"` // Управляет отправкой в Telegram
 }
 
 var rxPowerRegex = regexp.MustCompile(`(?i)rx.*power.*?(-?\d+(?:\.\d+)?)`)
@@ -78,7 +79,7 @@ func sendTelegramMessage(message string) {
 	}
 }
 
-func connectAndParseTransceiverData(sw Switch, threshold float64, allResults *[]SFPResult) {
+func connectAndParseTransceiverData(sw Switch, threshold float64, allResults *[]SFPResult, shouldSendAlerts bool) {
 	config := &ssh.ClientConfig{
 		User: sw.Username,
 		Auth: []ssh.AuthMethod{
@@ -148,7 +149,9 @@ func connectAndParseTransceiverData(sw Switch, threshold float64, allResults *[]
 	allMatches := rxPowerRegex.FindAllStringSubmatch(data, -1)
 	if len(allMatches) == 0 {
 		log.Printf("❌ Не найдены данные Rx Power в выводе от %s", sw.Host)
-		sendTelegramMessage(fmt.Sprintf("❌ На свитче %s не найдены данные Rx Power", sw.Host))
+		if shouldSendAlerts {
+			sendTelegramMessage(fmt.Sprintf("❌ На свитче %s не найдены данные Rx Power", sw.Host))
+		}
 	} else {
 		for i, matches := range allMatches {
 			if len(matches) > 1 {
@@ -163,7 +166,9 @@ func connectAndParseTransceiverData(sw Switch, threshold float64, allResults *[]
 						sw.Host, i+1, power,
 					)
 					log.Println(warningMsg)
-					sendTelegramMessage(warningMsg)
+					if shouldSendAlerts {
+						sendTelegramMessage(warningMsg)
+					}
 				}
 
 				result := SFPResult{
@@ -172,7 +177,7 @@ func connectAndParseTransceiverData(sw Switch, threshold float64, allResults *[]
 					Interface: i + 1,
 					RxPower:   power,
 					Status:    status,
-					Comment:   sw.Comment, // Передаём комментарий
+					Comment:   sw.Comment,
 				}
 
 				*allResults = append(*allResults, result)
@@ -207,19 +212,16 @@ func sfpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var results []SFPResult
-	var mu sync.Mutex // Теперь будем использовать!
+	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	for _, sw := range config.Switches {
 		wg.Add(1)
 		go func(s Switch) {
 			defer wg.Done()
-
-			// Временный срез для результатов одного свитча
 			var localResults []SFPResult
-			connectAndParseTransceiverData(s, config.Threshold, &localResults)
-
-			// Потокобезопасно добавляем в общий срез
+			// ❌ Не отправляем сообщения — это API
+			connectAndParseTransceiverData(s, config.Threshold, &localResults, false)
 			mu.Lock()
 			results = append(results, localResults...)
 			mu.Unlock()
@@ -228,7 +230,6 @@ func sfpHandler(w http.ResponseWriter, r *http.Request) {
 
 	wg.Wait()
 
-	// Сохраняем результаты
 	lastResultsMu.Lock()
 	lastResults = results
 	lastResultsMu.Unlock()
@@ -237,7 +238,6 @@ func sfpHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
-// Фоновая проверка (как раньше)
 func startPeriodicChecks(config *Config) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -254,10 +254,10 @@ func startPeriodicChecks(config *Config) {
 			wg.Add(1)
 			go func(s Switch) {
 				defer wg.Done()
-
 				var localResults []SFPResult
-				connectAndParseTransceiverData(s, config.Threshold, &localResults)
-
+				// ✅ Отправляем алерты, если разрешено в конфиге
+				shouldSend := config.SendMessages
+				connectAndParseTransceiverData(s, config.Threshold, &localResults, shouldSend)
 				mu.Lock()
 				for i := range localResults {
 					localResults[i].Comment = s.Comment
@@ -269,7 +269,6 @@ func startPeriodicChecks(config *Config) {
 
 		wg.Wait()
 
-		// Сохраняем результаты в кэш
 		lastResultsMu.Lock()
 		lastResults = results
 		lastResultsMu.Unlock()
